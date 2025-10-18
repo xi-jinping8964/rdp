@@ -1,0 +1,71 @@
+name: Free Cloud RDP (Tailscale - Auto Renew)
+
+on:
+  workflow_dispatch:           # 手动启动
+  schedule:
+    - cron: "0 */6 * * *"      # 每 6 小时自动重启一次（UTC时间）
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Write-Host "🟢 Enabling Remote Desktop..."
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name fDenyTSConnections -value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0
+
+      - name: Create RDP User
+        shell: powershell
+        run: |
+          Write-Host "🧩 Creating RDP user..."
+          $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()'
+          $Password = -join ((1..14) | ForEach-Object { $chars | Get-Random })
+          $SecurePass = ConvertTo-SecureString $Password -AsPlainText -Force
+          try {
+            net user RDP $Password /add
+            net localgroup "Administrators" RDP /add
+            net localgroup "Remote Desktop Users" RDP /add
+            echo "RDP_PASSWORD=$Password" >> $env:GITHUB_ENV
+          } catch {
+            Write-Host "⚠️ User might already exist or creation not permitted."
+          }
+
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          Write-Host "📦 Installing Tailscale..."
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale.exe
+          Start-Process .\tailscale.exe -ArgumentList "/quiet" -Wait
+
+      - name: Connect Tailscale
+        shell: powershell
+        run: |
+          Write-Host "🔌 Connecting to Tailscale..."
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey "${{ secrets.TAILSCALE_AUTHKEY }}" --hostname "gh-rdp" --accept-routes --ssh
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+          Write-Host "✅ Connected! Tailscale IP: $ip"
+
+      - name: Display Info
+        shell: powershell
+        run: |
+          Write-Host "`n=============================="
+          Write-Host "🖥️  Tailscale IP : $env:TAILSCALE_IP"
+          Write-Host "👤  Username     : RDP"
+          Write-Host "🔑  Password     : $env:RDP_PASSWORD"
+          Write-Host "⏱️  Lifetime     : 6 hours"
+          Write-Host "==============================`n"
+
+      - name: Keep Alive
+        shell: powershell
+        run: |
+          while ($true) {
+            Write-Host "[$(Get-Date)] 🔄 RDP running - keep alive..."
+            Start-Sleep -Seconds 60
+          }
