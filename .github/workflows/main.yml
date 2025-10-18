@@ -8,7 +8,7 @@ on:
 jobs:
   rdp:
     runs-on: windows-latest
-    timeout-minutes: 360       # 最长运行 6 小时
+    timeout-minutes: 360
     steps:
 
       - name: Enable RDP
@@ -17,7 +17,6 @@ jobs:
           Write-Host "🟢 Enabling Remote Desktop..."
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name fDenyTSConnections -value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          # 禁用 NLA 以避免客户端验证失败（仅限测试用）
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
           Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0
 
@@ -25,7 +24,8 @@ jobs:
         shell: powershell
         run: |
           Write-Host "🧩 Creating RDP user..."
-          $Password = [System.Web.Security.Membership]::GeneratePassword(14,3)
+          $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()'
+          $Password = -join ((1..14) | ForEach-Object { $chars | Get-Random })
           $SecurePass = ConvertTo-SecureString $Password -AsPlainText -Force
           try {
             net user RDP $Password /add
