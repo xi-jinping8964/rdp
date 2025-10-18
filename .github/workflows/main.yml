@@ -1,4 +1,4 @@
-name:RDP
+name: Free Cloud RDP (Tailscale - Auto Renew)
 
 on:
   workflow_dispatch:           # 手动启动
