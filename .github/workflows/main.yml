@@ -1,0 +1,57 @@
+name: Free Cloud RDP (Tailscale)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"   # 每6小时自动重启一次
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Enable RDP
+        shell: powershell
+        run: |
+          Write-Host "🟢 Enabling RDP service..."
+          Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name fDenyTSConnections -value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1
+
+      - name: Create RDP user
+        shell: powershell
+        run: |
+          $Password = [System.Web.Security.Membership]::GeneratePassword(16,4)
+          $SecurePass = ConvertTo-SecureString $Password -AsPlainText -Force
+          net user RDP $Password /add
+          net localgroup "Remote Desktop Users" RDP /add
+          Write-Host "✅ User: RDP"
+          Write-Host "🔑 Password: $Password"
+
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          Write-Host "🟡 Installing Tailscale..."
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale.exe
+          Start-Process tailscale.exe -ArgumentList "/quiet" -Wait
+          & 'C:\Program Files\Tailscale\tailscale.exe' up --authkey "${{ secrets.TAILSCALE_AUTHKEY }}" --hostname "gh-rdp" --accept-routes --ssh
+          & 'C:\Program Files\Tailscale\tailscale.exe' ip -4
+
+      - name: Display info
+        shell: powershell
+        run: |
+          $ip = & 'C:\Program Files\Tailscale\tailscale.exe' ip -4
+          Write-Host "🟢 Connect via Tailscale IP: $ip"
+          Write-Host "💻 User: RDP (Administrator)"
+          Write-Host "🔑 Password printed above."
+          Write-Host "⏳ Machine will stay alive for 6 hours."
+
+      - name: Keep alive
+        shell: powershell
+        run: |
+          while ($true) {
+            Write-Host "⏱️ RDP running... $(Get-Date)"
+            Start-Sleep -Seconds 60
+          }
